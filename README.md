@@ -15,7 +15,9 @@ Qt cross-platform class which allows transparently encrypt/decrypt QFileDevice u
 Copy 2 files (cryptfiledevice.cpp and cryptfiledevice.h) into your Qt project. See `examples/` for examples on using this class.
 
 In examples folder there are 2 example projects.
+
 1) CryptFileDeviceExample - test general operations with file and compare results with QFile object.
+
 2) WebViewWithCryptFileDevice - show how to display the user encrypt content (image).
 
 ## Contact
