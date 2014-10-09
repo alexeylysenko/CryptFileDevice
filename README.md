@@ -29,7 +29,7 @@ the Github [issue tracker][issue_tracker].
 
 ## License
 
-CrypFileDevice is licensed under [MIT](COPYING).
+CrypFileDevice is licensed under [MIT](LICENSE).
 
 ## Thanks to
 
