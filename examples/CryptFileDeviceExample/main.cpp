@@ -519,6 +519,14 @@ void testCryptFileDevice()
         PRINT_STATE(ok);
         Q_ASSERT_X(ok, Q_FUNC_INFO, "Open CryptFileDevice with wrong password is failed");
     }
+
+    /// ----------------------------------------------------------------------
+    qDebug() << "Removing";
+    {
+        ok = cryptFileDevice.remove() && !encryptedFile.exists();
+        PRINT_STATE(ok);
+        Q_ASSERT_X(ok, Q_FUNC_INFO, "Cannot remove file");
+    }
 }
 
 QMap<QString, int> testQFilePerformance(const QString &pathToTestData)

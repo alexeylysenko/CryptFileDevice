@@ -54,6 +54,8 @@ public:
 
     bool flush();
 
+    bool remove();
+
 protected:
     qint64 readData(char *data, qint64 len);
     qint64 writeData(const char *data, qint64 len);

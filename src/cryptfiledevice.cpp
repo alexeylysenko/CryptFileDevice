@@ -627,3 +627,18 @@ qint64 CryptFileDevice::calculateSizeHelper()
 
     return result;
 }
+
+bool CryptFileDevice::remove()
+{
+    if (m_device == nullptr)
+        return false;
+
+    QString fileName = m_device->fileName();
+    if (fileName.isEmpty())
+        return false;
+
+    if (isOpen())
+        close();
+
+    return QFile::remove(fileName);
+}
