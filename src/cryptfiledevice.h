@@ -51,9 +51,7 @@ public:
     qint64 bytesAvailable() const;
     qint64 pos() const;
     bool seek(qint64 pos);
-
     bool flush();
-
     bool remove();
 
 protected:

@@ -9,6 +9,7 @@
 #include <QCryptographicHash>
 
 static int const kHeaderLength = 128;
+static int const kSaltMaxLength = 8;
 
 CryptFileDevice::CryptFileDevice(QObject *parent) :
     QIODevice(parent)
@@ -30,7 +31,7 @@ CryptFileDevice::CryptFileDevice(QFileDevice *device,
     m_device(device),
     m_deviceOwner(false),
     m_password(password),
-    m_salt(salt.mid(0, 8))
+    m_salt(salt.mid(0, kSaltMaxLength))
 {
 }
 
@@ -42,7 +43,7 @@ CryptFileDevice::CryptFileDevice(const QString &fileName,
     m_device(new QFile(fileName)),
     m_deviceOwner(true),
     m_password(password),
-    m_salt(salt.mid(0, 8))
+    m_salt(salt.mid(0, kSaltMaxLength))
 {
 }
 
