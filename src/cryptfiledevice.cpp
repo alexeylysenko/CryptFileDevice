@@ -1,7 +1,8 @@
 #include "cryptfiledevice.h"
 
-#include <openssl/err.h>
-#include <openssl/aes.h>
+#include <openssl/evp.h>
+
+#include <QtEndian>
 
 #include <QFileDevice>
 #include <QFile>
@@ -59,7 +60,7 @@ void CryptFileDevice::setPassword(const QByteArray &password)
 
 void CryptFileDevice::setSalt(const QByteArray &salt)
 {
-    m_salt = salt.mid(0, 8);
+    m_salt = salt.mid(0, kSaltMaxLength);
 }
 
 void CryptFileDevice::setKeyLength(AesKeyLength keyLength)
@@ -113,12 +114,8 @@ bool CryptFileDevice::open(OpenMode mode)
     if (!initCipher())
         return false;
 
-    m_wasFlushed = false;
-    m_blockFlush = false;
-    m_wasSought = false;
     m_encrypted = true;
     setOpenMode(mode);
-    m_size = -1;
 
     qint64 size = m_device->size();
     if (size == 0 && mode != ReadOnly)
@@ -134,13 +131,7 @@ bool CryptFileDevice::open(OpenMode mode)
     }
 
     if (mode & Append)
-    {
-        qint64 size = m_device->size() - kHeaderLength;
-        if (size < AES_BLOCK_SIZE)
-            return true;
-
-        m_wasFlushed = true;
-    }
+        seek(m_device->size() - kHeaderLength);
 
     return true;
 }
@@ -209,11 +200,7 @@ void CryptFileDevice::close()
     setOpenMode(NotOpen);
 
     if (m_encrypted)
-    {
-        EVP_CIPHER_CTX_cleanup(&m_encCtx);
-        EVP_CIPHER_CTX_cleanup(&m_decCtx);
         m_encrypted = false;
-    }
 }
 
 void CryptFileDevice::setFileName(const QString &fileName)
@@ -232,6 +219,7 @@ QString CryptFileDevice::fileName() const
 {
     if (m_device != nullptr)
         return m_device->fileName();
+
     return QString();
 }
 
@@ -249,41 +237,7 @@ void CryptFileDevice::setFileDevice(QFileDevice *device)
 
 bool CryptFileDevice::flush()
 {
-    if (!m_encrypted)
-        return false;
-
-    if (m_wasFlushed)
-        return true;
-
-    if (m_buffer.isEmpty())
-        return false;
-
-    m_wasFlushed = true;
-
-    int len = m_buffer.length();
-    int maxCipherLen = len + AES_BLOCK_SIZE - (len % AES_BLOCK_SIZE) + AES_BLOCK_SIZE;
-    int finalLen = 0;
-    unsigned char *cipherText = new unsigned char[maxCipherLen];
-
-    EVP_EncryptInit_ex(&m_encCtx, NULL, NULL, NULL, NULL);
-    EVP_EncryptUpdate(&m_encCtx, cipherText, &maxCipherLen, (unsigned char *)m_buffer.data(), len);
-    EVP_EncryptFinal_ex(&m_encCtx, &cipherText[maxCipherLen], &finalLen);
-
-    len = maxCipherLen;
-    if (m_device->pos() >= m_device->size())
-        len += finalLen;
-
-    m_device->write((char *)cipherText, len);
-    delete[] cipherText;
-
-    m_blockFlush = true;
-    seek(pos() + m_buffer.length());
-    m_blockFlush = false;
-    m_wasSought = false;
-
-    m_buffer.clear();
-
-    return true;
+    return m_device->flush();
 }
 
 bool CryptFileDevice::isEncrypted() const
@@ -301,7 +255,7 @@ qint64 CryptFileDevice::readBlock(qint64 len, QByteArray &ba)
             break;
 
         readBytes += fileRead;
-    } while(readBytes < len);
+    } while (readBytes < len);
 
     if (readBytes == 0)
         return 0;
@@ -311,18 +265,8 @@ qint64 CryptFileDevice::readBlock(qint64 len, QByteArray &ba)
     char * plaintext = decrypt(ba.data() + length, &size);
     ba.truncate(length);
 
-    if (size == 0)
-    {
-        delete[] plaintext;
-        m_device->seek(m_device->pos() - readBytes);
-        return 0;
-    }
-
     ba.append(plaintext, size);
     delete[] plaintext;
-
-    int rereadBytes = readBytes - size;
-    m_device->seek(m_device->pos() - rereadBytes);
 
     return size;
 }
@@ -338,14 +282,10 @@ qint64 CryptFileDevice::readData(char *data, qint64 len)
     if (len == 0)
         return m_device->read(data, len);
 
-    int skip = pos() % AES_BLOCK_SIZE;
-    len += skip;
-
     QByteArray ba;
-    ba.reserve(len + 2 * AES_BLOCK_SIZE);
+    ba.reserve(len);
     do {
         int maxSize = len - ba.length();
-        maxSize += AES_BLOCK_SIZE - (maxSize % AES_BLOCK_SIZE) + AES_BLOCK_SIZE;
 
         int size = readBlock(maxSize, ba);
 
@@ -356,19 +296,9 @@ qint64 CryptFileDevice::readData(char *data, qint64 len)
     if (ba.isEmpty())
         return 0;
 
-    int back = 0;
-    int length = ba.length();
-    if (length > len)
-    {
-        back = length - len;
-        qint64 devicePos = m_device->pos() - back;
-        int newDevicePos = devicePos - (devicePos % AES_BLOCK_SIZE);
-        m_device->seek(newDevicePos);
-    }
+    memcpy(data, ba.data(), ba.length());
 
-    memcpy(data, ba.data() + skip, length - skip - back);
-
-    return length - skip - back;
+    return ba.length();
 }
 
 qint64 CryptFileDevice::writeData(const char *data, qint64 len)
@@ -376,107 +306,66 @@ qint64 CryptFileDevice::writeData(const char *data, qint64 len)
     if (!m_encrypted)
         return m_device->write(data, len);
 
-    qint64 newSize = pos() + len;
-
-    if (m_wasFlushed)
-    {
-        m_blockFlush = true;
-        qint64 devicePos = m_device->size() - kHeaderLength;
-        seek(devicePos - AES_BLOCK_SIZE);
-        m_buffer = read(AES_BLOCK_SIZE);
-        seek(devicePos - AES_BLOCK_SIZE);
-        m_blockFlush = false;
-        m_wasFlushed = false;
-        m_wasSought = false;
-
-        if (len < AES_BLOCK_SIZE)
-        {
-            m_device->resize(devicePos + kHeaderLength - AES_BLOCK_SIZE);
-            newSize = pos() + len;
-        }
-    }
-
-    if (m_wasSought)
-    {
-        m_blockFlush = true;
-        qint64 devicePos = m_device->pos() - kHeaderLength;
-        int back = pos() % AES_BLOCK_SIZE;
-        if (back != 0)
-        {
-            seek(devicePos);
-            m_buffer = read(back);
-            seek(devicePos);
-            Q_ASSERT(m_buffer.size() == back);
-        }
-
-        qint64 newPos = devicePos + back + len;
-        qint64 deviceSize = size();
-
-        m_buffer.append(data, len);
-
-        if (newPos <= deviceSize)
-        {
-            seek(newPos);
-            int needReadBytes = AES_BLOCK_SIZE - ((len + back) % AES_BLOCK_SIZE);
-            QByteArray additionalData = read(needReadBytes);
-
-            if (needReadBytes != additionalData.length())
-            {
-                m_device->resize(devicePos + kHeaderLength);
-                newSize = newPos;
-            }
-
-            m_buffer.append(additionalData);
-            seek(devicePos);
-        }
-        else
-        {
-            m_device->resize(devicePos + kHeaderLength);
-            newSize = newPos;
-        }
-
-        m_wasSought = false;
-        m_blockFlush = false;
-    }
-    else
-    {
-        m_buffer.append(data, len);
-    }
-
-    int size = m_buffer.length();
-
-    if (size > len)
-        size = len;
-
-    size = size - (size % AES_BLOCK_SIZE);
-    QByteArray ba(m_buffer.left(size));
-    m_buffer.remove(0, size);
-    char *cipherText = encrypt(ba.data(), &size);
+    int size = len;
+    char *cipherText = encrypt(data, &size);
     m_device->write(cipherText, size);
     delete[] cipherText;
 
-    if (newSize > m_size)
-        m_size = newSize;
+    return size;
+}
 
-    return len;
+void CryptFileDevice::initCtr(struct CtrState *state, const unsigned char iv[8])
+{
+    qint64 position = pos();
+
+    state->num = position % AES_BLOCK_SIZE;
+
+    memset(state->ecount, 0, 16);
+
+    /* Initialise counter in 'ivec' */
+    qint64 count = position / AES_BLOCK_SIZE;
+    if (state->num > 0)
+        count++;
+
+    qint64 newCount = count;
+    if (newCount > 0)
+        newCount = qToBigEndian(count);
+
+    memcpy(state->ivec + 8, &newCount, 8);
+
+    /* Copy IV into 'ivec' */
+    memcpy(state->ivec, iv, 8);
+
+    if (count > 0)
+    {
+        count = qToBigEndian(count - 1);
+        unsigned char * prevIvec = new unsigned char[16];
+        memcpy(prevIvec, m_ctrState->ivec, 8);
+
+        memcpy(prevIvec + 8, &count, 8);
+
+        AES_encrypt(prevIvec, m_ctrState->ecount, &m_aesKey);
+    }
 }
 
 bool CryptFileDevice::initCipher()
 {
     const EVP_CIPHER *cipher = EVP_enc_null();
     if (m_aesKeyLength == kAesKeyLength128)
-        cipher = EVP_aes_128_ecb();
+        cipher = EVP_aes_128_ctr();
     else if (m_aesKeyLength == kAesKeyLength192)
-        cipher = EVP_aes_192_ecb();
+        cipher = EVP_aes_192_ctr();
     else if (m_aesKeyLength == kAesKeyLength256)
-        cipher = EVP_aes_256_ecb();
+        cipher = EVP_aes_256_ctr();
     else
         Q_ASSERT_X(false, Q_FUNC_INFO, "Unknown value of AesKeyLength");
 
-    EVP_CIPHER_CTX_init(&m_encCtx);
-    EVP_EncryptInit_ex(&m_encCtx, cipher, NULL, NULL, NULL);
-    int keyLength = EVP_CIPHER_CTX_key_length(&m_encCtx);
-    int ivLength = EVP_CIPHER_CTX_iv_length(&m_encCtx);
+    EVP_CIPHER_CTX ctx;
+
+    EVP_CIPHER_CTX_init(&ctx);
+    EVP_EncryptInit_ex(&ctx, cipher, NULL, NULL, NULL);
+    int keyLength = EVP_CIPHER_CTX_key_length(&ctx);
+    int ivLength = EVP_CIPHER_CTX_iv_length(&ctx);
 
     unsigned char key[keyLength];
     unsigned char iv[ivLength];
@@ -490,13 +379,17 @@ bool CryptFileDevice::initCipher()
                             key,
                             iv);
 
+    EVP_CIPHER_CTX_cleanup(&ctx);
+
     if (ok == 0)
         return false;
 
-    EVP_CIPHER_CTX_init(&m_encCtx);
-    EVP_EncryptInit_ex(&m_encCtx, cipher, NULL, key, iv);
-    EVP_CIPHER_CTX_init(&m_decCtx);
-    EVP_DecryptInit_ex(&m_decCtx, cipher, NULL, key, iv);
+    int res = AES_set_encrypt_key(key, keyLength * 8, &m_aesKey);
+    if (res != 0)
+        return false;
+
+    m_ctrState = new CtrState();
+    initCtr(m_ctrState, iv);
 
     return true;
 }
@@ -504,28 +397,32 @@ bool CryptFileDevice::initCipher()
 char * CryptFileDevice::encrypt(const char *plainText, int *len)
 {
     int maxCipherLen = *len;
-    int finalLen = 0;
-    unsigned char *cipherText = new unsigned char[maxCipherLen + AES_BLOCK_SIZE];
+    unsigned char *cipherText = new unsigned char[maxCipherLen];
 
-    EVP_EncryptInit_ex(&m_encCtx, NULL, NULL, NULL, NULL);
-    EVP_EncryptUpdate(&m_encCtx, cipherText, &maxCipherLen, (unsigned char *)plainText, *len);
-    EVP_EncryptFinal_ex(&m_encCtx, &cipherText[maxCipherLen], &finalLen);
+    AES_ctr128_encrypt((unsigned char *)plainText,
+                       cipherText,
+                       maxCipherLen,
+                       &m_aesKey,
+                       m_ctrState->ivec,
+                       m_ctrState->ecount,
+                       &m_ctrState->num);
 
-    *len = maxCipherLen;
     return (char *)cipherText;
 }
 
 char * CryptFileDevice::decrypt(char *cipherText, int *len)
 {
     int maxPlainLen = *len;
-    int finalLen = 0;
-    unsigned char *plainText = new unsigned char[maxPlainLen + AES_BLOCK_SIZE];
+    unsigned char *plainText = new unsigned char[maxPlainLen];
 
-    EVP_DecryptInit_ex(&m_decCtx, NULL, NULL, NULL, NULL);
-    EVP_DecryptUpdate(&m_decCtx, plainText, &maxPlainLen, (unsigned char *)cipherText, *len);
-    EVP_DecryptFinal_ex(&m_decCtx, plainText + maxPlainLen, &finalLen);
+    AES_ctr128_encrypt((unsigned char *)cipherText,
+                       plainText,
+                       maxPlainLen,
+                       &m_aesKey,
+                       m_ctrState->ivec,
+                       m_ctrState->ecount,
+                       &m_ctrState->num);
 
-    *len = maxPlainLen + finalLen;
     return (char *)plainText;
 }
 
@@ -546,24 +443,18 @@ qint64 CryptFileDevice::pos() const
 
 bool CryptFileDevice::seek(qint64 pos)
 {
+    bool result = QIODevice::seek(pos);
     if (m_encrypted)
     {
-        if (!m_blockFlush && !m_buffer.isEmpty())
-        {
-            flush();
-            m_wasFlushed = false;
-        }
-
-        qint64 devicePos = pos - (pos % AES_BLOCK_SIZE);
-        m_device->seek(kHeaderLength + devicePos);
-        m_wasSought = true;
+        m_device->seek(kHeaderLength + pos);
+        initCtr(m_ctrState, m_ctrState->ivec);
     }
     else
     {
         m_device->seek(pos);
     }
 
-    return QIODevice::seek(pos);
+    return result;
 }
 
 qint64 CryptFileDevice::size() const
@@ -574,59 +465,7 @@ qint64 CryptFileDevice::size() const
     if (!m_encrypted)
         return m_device->size();
 
-    if (m_size != -1)
-        return m_size;
-
-    CryptFileDevice *cfd = const_cast<CryptFileDevice*>(this);
-
-    return cfd->calculateSize();
-}
-
-qint64 CryptFileDevice::calculateSize()
-{
-    bool oldValueWasSought = m_wasSought;
-    bool oldValueWasFlushed = m_wasFlushed;
-    bool oldValueBlockFlushed = m_blockFlush;
-
-    m_wasFlushed = false;
-    m_blockFlush = true;
-
-    m_size = calculateSizeHelper();
-
-    m_wasSought = oldValueWasSought;
-    m_blockFlush = oldValueBlockFlushed;
-    m_wasFlushed = oldValueWasFlushed;
-
-    return m_size;
-}
-
-qint64 CryptFileDevice::calculateSizeHelper()
-{
-    qint64 position = m_device->pos() - kHeaderLength + (pos() % AES_BLOCK_SIZE);
-    qint64 deviceSize = m_device->size();
-
-    QByteArray oldBuffer = m_buffer;
-    if (openMode() != QIODevice::ReadOnly)
-        flush();
-
-    qint64 size = m_device->size() - kHeaderLength;
-    if (size < AES_BLOCK_SIZE)
-    {
-        seek(position);
-        return size;
-    }
-
-    seek(size - AES_BLOCK_SIZE);
-    QByteArray buffer = read(AES_BLOCK_SIZE);
-    m_device->resize(deviceSize);
-    seek(position);
-
-    if (m_buffer != oldBuffer)
-        m_buffer = oldBuffer;
-
-    qint64 result = size + buffer.length() - AES_BLOCK_SIZE;
-
-    return result;
+    return m_device->size() - kHeaderLength;
 }
 
 bool CryptFileDevice::remove()

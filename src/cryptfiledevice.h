@@ -3,9 +3,16 @@
 
 #include <QIODevice>
 
-#include <openssl/evp.h>
+#include <openssl/aes.h>
 
 class QFileDevice;
+
+struct CtrState
+{
+    unsigned char ivec[AES_BLOCK_SIZE];
+    unsigned int num;
+    unsigned char ecount[AES_BLOCK_SIZE];
+};
 
 class CryptFileDevice : public QIODevice
 {
@@ -60,14 +67,11 @@ protected:
 
     qint64 readBlock(qint64 len, QByteArray &ba);
 
-    qint64 calculateSize();
-
 private:
     bool initCipher();
+    void initCtr(struct CtrState *state, const unsigned char iv[8]);
     char * encrypt(const char *plainText, int *len);
     char * decrypt(char *cipherText, int *len);
-
-    qint64 calculateSizeHelper();
 
     void insertHeader();
     bool tryParseHeader();
@@ -81,15 +85,8 @@ private:
     AesKeyLength m_aesKeyLength = kAesKeyLength256;
     int m_numRounds = 5;
 
-    EVP_CIPHER_CTX m_encCtx;
-    EVP_CIPHER_CTX m_decCtx;
-
-    QByteArray m_buffer;
-    bool m_wasFlushed = false;
-    bool m_wasSought = false;
-    bool m_blockFlush = false;
-
-    qint64 m_size = -1;
+    CtrState *m_ctrState;
+    AES_KEY m_aesKey;
 };
 
 #endif // CRYPTFILEDEVICE_H
