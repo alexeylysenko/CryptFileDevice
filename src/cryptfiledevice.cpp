@@ -340,11 +340,11 @@ void CryptFileDevice::initCtr(struct CtrState *state, const unsigned char iv[8])
     {
         count = qToBigEndian(count - 1);
         unsigned char * prevIvec = new unsigned char[16];
-        memcpy(prevIvec, m_ctrState->ivec, 8);
+        memcpy(prevIvec, state->ivec, 8);
 
         memcpy(prevIvec + 8, &count, 8);
 
-        AES_encrypt(prevIvec, m_ctrState->ecount, &m_aesKey);
+        AES_encrypt(prevIvec, state->ecount, &m_aesKey);
     }
 }
 
