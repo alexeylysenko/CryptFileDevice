@@ -36,7 +36,8 @@ CrypFileDevice is licensed under [MIT](LICENSE).
 ## Thanks to
 
 Special thanks to Ruslan Salikhov for testing and sensible suggestions.
-Thanks to habrauser Disasm
+
+Thanks to habrauser Disasm for suggestion.
 
 
 [issue_tracker]: https://github.com/alexeylysenko/CryptFileDevice/issues
