@@ -1,7 +1,7 @@
 CryptFileDevice
 ===============
 
-Qt cross-platform class which allows transparently encrypt/decrypt QFileDevice using AES algorithm with OpenSSL library.
+Qt cross-platform class which allows transparently encrypt/decrypt QFileDevice using AES-CTR algorithm with OpenSSL library.
 
 ## Dependencies
 
@@ -36,6 +36,7 @@ CrypFileDevice is licensed under [MIT](LICENSE).
 ## Thanks to
 
 Special thanks to Ruslan Salikhov for testing and sensible suggestions.
+Thanks to habrauser Disasm
 
 
 [issue_tracker]: https://github.com/alexeylysenko/CryptFileDevice/issues

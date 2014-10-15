@@ -51,6 +51,9 @@ CryptFileDevice::CryptFileDevice(const QString &fileName,
 CryptFileDevice::~CryptFileDevice()
 {
     close();
+
+    if (m_deviceOwner)
+        delete m_device;
 }
 
 void CryptFileDevice::setPassword(const QByteArray &password)
@@ -248,7 +251,7 @@ bool CryptFileDevice::isEncrypted() const
 qint64 CryptFileDevice::readBlock(qint64 len, QByteArray &ba)
 {
     int length = ba.length();
-    int readBytes = 0;
+    qint64 readBytes = 0;
     do {
         qint64 fileRead = m_device->read(ba.data() + ba.length(), len - readBytes);
         if (fileRead <= 0)
@@ -260,15 +263,12 @@ qint64 CryptFileDevice::readBlock(qint64 len, QByteArray &ba)
     if (readBytes == 0)
         return 0;
 
-    int size = readBytes;
+    char * plaintext = decrypt(ba.data() + length, readBytes);
 
-    char * plaintext = decrypt(ba.data() + length, &size);
-    ba.truncate(length);
-
-    ba.append(plaintext, size);
+    ba.append(plaintext, readBytes);
     delete[] plaintext;
 
-    return size;
+    return readBytes;
 }
 
 qint64 CryptFileDevice::readData(char *data, qint64 len)
@@ -285,9 +285,9 @@ qint64 CryptFileDevice::readData(char *data, qint64 len)
     QByteArray ba;
     ba.reserve(len);
     do {
-        int maxSize = len - ba.length();
+        qint64 maxSize = len - ba.length();
 
-        int size = readBlock(maxSize, ba);
+        qint64 size = readBlock(maxSize, ba);
 
         if (size == 0)
             break;
@@ -306,15 +306,14 @@ qint64 CryptFileDevice::writeData(const char *data, qint64 len)
     if (!m_encrypted)
         return m_device->write(data, len);
 
-    int size = len;
-    char *cipherText = encrypt(data, &size);
-    m_device->write(cipherText, size);
+    char *cipherText = encrypt(data, len);
+    m_device->write(cipherText, len);
     delete[] cipherText;
 
-    return size;
+    return len;
 }
 
-void CryptFileDevice::initCtr(struct CtrState *state, const unsigned char iv[8])
+void CryptFileDevice::initCtr(CtrState *state, const unsigned char *iv)
 {
     qint64 position = pos();
 
@@ -388,40 +387,53 @@ bool CryptFileDevice::initCipher()
     if (res != 0)
         return false;
 
-    m_ctrState = new CtrState();
-    initCtr(m_ctrState, iv);
+    initCtr(&m_ctrState, iv);
 
     return true;
 }
 
-char * CryptFileDevice::encrypt(const char *plainText, int *len)
+char * CryptFileDevice::encrypt(const char *plainText, qint64 len)
 {
-    int maxCipherLen = *len;
-    unsigned char *cipherText = new unsigned char[maxCipherLen];
+    unsigned char *cipherText = new unsigned char[len];
 
-    AES_ctr128_encrypt((unsigned char *)plainText,
-                       cipherText,
-                       maxCipherLen,
-                       &m_aesKey,
-                       m_ctrState->ivec,
-                       m_ctrState->ecount,
-                       &m_ctrState->num);
+    qint64 processLen = 0;
+    do {
+        int maxCipherLen = len > INT_MAX ? INT_MAX : len;
+
+        AES_ctr128_encrypt((unsigned char *)plainText + processLen,
+                           cipherText + processLen,
+                           maxCipherLen,
+                           &m_aesKey,
+                           m_ctrState.ivec,
+                           m_ctrState.ecount,
+                           &m_ctrState.num);
+
+        processLen += maxCipherLen;
+        len -= maxCipherLen;
+    } while (len > 0);
 
     return (char *)cipherText;
 }
 
-char * CryptFileDevice::decrypt(char *cipherText, int *len)
+char * CryptFileDevice::decrypt(char *cipherText, qint64 len)
 {
-    int maxPlainLen = *len;
-    unsigned char *plainText = new unsigned char[maxPlainLen];
+    unsigned char *plainText = new unsigned char[len];
 
-    AES_ctr128_encrypt((unsigned char *)cipherText,
-                       plainText,
-                       maxPlainLen,
-                       &m_aesKey,
-                       m_ctrState->ivec,
-                       m_ctrState->ecount,
-                       &m_ctrState->num);
+    qint64 processLen = 0;
+    do {
+        int maxPlainLen = len > INT_MAX ? INT_MAX : len;
+
+        AES_ctr128_encrypt((unsigned char *)cipherText + processLen,
+                           plainText + processLen,
+                           maxPlainLen,
+                           &m_aesKey,
+                           m_ctrState.ivec,
+                           m_ctrState.ecount,
+                           &m_ctrState.num);
+
+        processLen += maxPlainLen;
+        len -= maxPlainLen;
+    } while (len > 0);
 
     return (char *)plainText;
 }
@@ -447,7 +459,7 @@ bool CryptFileDevice::seek(qint64 pos)
     if (m_encrypted)
     {
         m_device->seek(kHeaderLength + pos);
-        initCtr(m_ctrState, m_ctrState->ivec);
+        initCtr(&m_ctrState, m_ctrState.ivec);
     }
     else
     {
@@ -459,7 +471,7 @@ bool CryptFileDevice::seek(qint64 pos)
 
 qint64 CryptFileDevice::size() const
 {
-    if (!isOpen())
+    if (m_device == nullptr)
         return 0;
 
     if (!m_encrypted)

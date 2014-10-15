@@ -69,9 +69,9 @@ protected:
 
 private:
     bool initCipher();
-    void initCtr(struct CtrState *state, const unsigned char iv[8]);
-    char * encrypt(const char *plainText, int *len);
-    char * decrypt(char *cipherText, int *len);
+    void initCtr(CtrState *state, const unsigned char *iv);
+    char * encrypt(const char *plainText, qint64 len);
+    char * decrypt(char *cipherText, qint64 len);
 
     void insertHeader();
     bool tryParseHeader();
@@ -85,7 +85,7 @@ private:
     AesKeyLength m_aesKeyLength = kAesKeyLength256;
     int m_numRounds = 5;
 
-    CtrState *m_ctrState;
+    CtrState m_ctrState;
     AES_KEY m_aesKey;
 };
 
