@@ -494,3 +494,30 @@ bool CryptFileDevice::remove()
 
     return QFile::remove(fileName);
 }
+
+bool CryptFileDevice::exists() const
+{
+    if (m_device == nullptr)
+        return false;
+
+    QString fileName = m_device->fileName();
+    if (fileName.isEmpty())
+        return false;
+
+    return QFile::exists(fileName);
+}
+
+bool CryptFileDevice::rename(const QString &newName)
+{
+    if (m_device == nullptr)
+        return false;
+
+    QString fileName = m_device->fileName();
+    if (fileName.isEmpty())
+        return false;
+
+    if (isOpen())
+        close();
+
+    return QFile::rename(fileName, newName);
+}

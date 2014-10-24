@@ -60,6 +60,8 @@ public:
     bool seek(qint64 pos);
     bool flush();
     bool remove();
+	bool exists() const;
+	bool rename(const QString &newName);
 
 protected:
     qint64 readData(char *data, qint64 len);
