@@ -492,7 +492,11 @@ bool CryptFileDevice::remove()
     if (isOpen())
         close();
 
-    return QFile::remove(fileName);
+    bool ok = QFile::remove(fileName);
+    if (ok)
+        m_device = nullptr;
+
+    return ok;
 }
 
 bool CryptFileDevice::exists() const
@@ -519,5 +523,9 @@ bool CryptFileDevice::rename(const QString &newName)
     if (isOpen())
         close();
 
-    return QFile::rename(fileName, newName);
+    bool ok = QFile::rename(fileName, newName);
+    if (ok)
+        setFileName(newName);
+
+    return ok;
 }
