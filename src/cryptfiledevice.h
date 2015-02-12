@@ -2,6 +2,7 @@
 #define CRYPTFILEDEVICE_H
 
 #include <QIODevice>
+#include <memory>
 
 #include <openssl/aes.h>
 
@@ -72,8 +73,8 @@ protected:
 private:
     bool initCipher();
     void initCtr(CtrState *state, const unsigned char *iv);
-    char * encrypt(const char *plainText, qint64 len);
-    char * decrypt(char *cipherText, qint64 len);
+    std::unique_ptr<char[]> encrypt(const char *plainText, qint64 len);
+    std::unique_ptr<char[]> decrypt(const char *cipherText, qint64 len);
 
     void insertHeader();
     bool tryParseHeader();
