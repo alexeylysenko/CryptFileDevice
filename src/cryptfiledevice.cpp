@@ -319,7 +319,7 @@ void CryptFileDevice::initCtr(CtrState *state, const unsigned char *iv)
 
     state->num = position % AES_BLOCK_SIZE;
 
-    memset(state->ecount, 0, 16);
+    memset(state->ecount, 0, sizeof(state->ecount));
 
     /* Initialise counter in 'ivec' */
     qint64 count = position / AES_BLOCK_SIZE;
@@ -330,18 +330,18 @@ void CryptFileDevice::initCtr(CtrState *state, const unsigned char *iv)
     if (newCount > 0)
         newCount = qToBigEndian(count);
 
-    memcpy(state->ivec + 8, &newCount, 8);
+    memcpy(state->ivec + sizeof(qint64), &newCount, sizeof(newCount));
 
     /* Copy IV into 'ivec' */
-    memcpy(state->ivec, iv, 8);
+    memcpy(state->ivec, iv, sizeof(qint64));
 
     if (count > 0)
     {
         count = qToBigEndian(count - 1);
-        unsigned char * prevIvec = new unsigned char[16];
-        memcpy(prevIvec, state->ivec, 8);
+        unsigned char prevIvec[AES_BLOCK_SIZE];
+        memcpy(prevIvec, state->ivec, sizeof(qint64));
 
-        memcpy(prevIvec + 8, &count, 8);
+        memcpy(prevIvec + sizeof(qint64), &count, sizeof(count));
 
         AES_encrypt(prevIvec, state->ecount, &m_aesKey);
     }
