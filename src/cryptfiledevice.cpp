@@ -2,6 +2,8 @@
 
 #include <openssl/evp.h>
 
+#include <limits>
+
 #include <QtEndian>
 
 #include <QFileDevice>
@@ -263,10 +265,9 @@ qint64 CryptFileDevice::readBlock(qint64 len, QByteArray &ba)
     if (readBytes == 0)
         return 0;
 
-    char * plaintext = decrypt(ba.data() + length, readBytes);
+    std::unique_ptr<char[]> plaintext = decrypt(ba.data() + length, readBytes);
 
-    ba.append(plaintext, readBytes);
-    delete[] plaintext;
+    ba.append(plaintext.get(), readBytes);
 
     return readBytes;
 }
@@ -306,9 +307,8 @@ qint64 CryptFileDevice::writeData(const char *data, qint64 len)
     if (!m_encrypted)
         return m_device->write(data, len);
 
-    char *cipherText = encrypt(data, len);
-    m_device->write(cipherText, len);
-    delete[] cipherText;
+    std::unique_ptr<char[]> cipherText = encrypt(data, len);
+    m_device->write(cipherText.get(), len);
 
     return len;
 }
@@ -319,7 +319,7 @@ void CryptFileDevice::initCtr(CtrState *state, const unsigned char *iv)
 
     state->num = position % AES_BLOCK_SIZE;
 
-    memset(state->ecount, 0, 16);
+    memset(state->ecount, 0, sizeof(state->ecount));
 
     /* Initialise counter in 'ivec' */
     qint64 count = position / AES_BLOCK_SIZE;
@@ -330,18 +330,18 @@ void CryptFileDevice::initCtr(CtrState *state, const unsigned char *iv)
     if (newCount > 0)
         newCount = qToBigEndian(count);
 
-    memcpy(state->ivec + 8, &newCount, 8);
+    memcpy(state->ivec + sizeof(qint64), &newCount, sizeof(newCount));
 
     /* Copy IV into 'ivec' */
-    memcpy(state->ivec, iv, 8);
+    memcpy(state->ivec, iv, sizeof(qint64));
 
     if (count > 0)
     {
         count = qToBigEndian(count - 1);
-        unsigned char * prevIvec = new unsigned char[16];
-        memcpy(prevIvec, state->ivec, 8);
+        unsigned char prevIvec[AES_BLOCK_SIZE];
+        memcpy(prevIvec, state->ivec, sizeof(qint64));
 
-        memcpy(prevIvec + 8, &count, 8);
+        memcpy(prevIvec + sizeof(qint64), &count, sizeof(count));
 
         AES_encrypt(prevIvec, state->ecount, &m_aesKey);
     }
@@ -362,7 +362,7 @@ bool CryptFileDevice::initCipher()
     EVP_CIPHER_CTX ctx;
 
     EVP_CIPHER_CTX_init(&ctx);
-    EVP_EncryptInit_ex(&ctx, cipher, NULL, NULL, NULL);
+    EVP_EncryptInit_ex(&ctx, cipher, nullptr, nullptr, nullptr);
     int keyLength = EVP_CIPHER_CTX_key_length(&ctx);
     int ivLength = EVP_CIPHER_CTX_iv_length(&ctx);
 
@@ -371,7 +371,7 @@ bool CryptFileDevice::initCipher()
 
     int ok = EVP_BytesToKey(cipher,
                             EVP_sha256(),
-                            m_salt.isEmpty() ? NULL : (unsigned char *)m_salt.data(),
+                            m_salt.isEmpty() ? nullptr : (unsigned char *)m_salt.data(),
                             (unsigned char *)m_password.data(),
                             m_password.length(),
                             m_numRounds,
@@ -392,16 +392,16 @@ bool CryptFileDevice::initCipher()
     return true;
 }
 
-char * CryptFileDevice::encrypt(const char *plainText, qint64 len)
+std::unique_ptr<char[]> CryptFileDevice::encrypt(const char *plainText, qint64 len)
 {
-    unsigned char *cipherText = new unsigned char[len];
+    std::unique_ptr<unsigned char[]> cipherText = std::make_unique<unsigned char[]>( len );
 
     qint64 processLen = 0;
     do {
-        int maxCipherLen = len > INT_MAX ? INT_MAX : len;
+        int maxCipherLen = len > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : len;
 
-        AES_ctr128_encrypt((unsigned char *)plainText + processLen,
-                           cipherText + processLen,
+        AES_ctr128_encrypt(reinterpret_cast<const unsigned char *>( plainText ) + processLen,
+                           cipherText.get() + processLen,
                            maxCipherLen,
                            &m_aesKey,
                            m_ctrState.ivec,
@@ -412,19 +412,19 @@ char * CryptFileDevice::encrypt(const char *plainText, qint64 len)
         len -= maxCipherLen;
     } while (len > 0);
 
-    return (char *)cipherText;
+    return std::unique_ptr<char[]>( reinterpret_cast<char *>( cipherText.release() ) );
 }
 
-char * CryptFileDevice::decrypt(char *cipherText, qint64 len)
+std::unique_ptr<char[]> CryptFileDevice::decrypt(const char *cipherText, qint64 len)
 {
-    unsigned char *plainText = new unsigned char[len];
+    std::unique_ptr<unsigned char[]> plainText = std::make_unique<unsigned char[]>( len );
 
     qint64 processLen = 0;
     do {
-        int maxPlainLen = len > INT_MAX ? INT_MAX : len;
+        int maxPlainLen = len > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : len;
 
-        AES_ctr128_encrypt((unsigned char *)cipherText + processLen,
-                           plainText + processLen,
+        AES_ctr128_encrypt(reinterpret_cast<const unsigned char *>( cipherText ) + processLen,
+                           plainText.get() + processLen,
                            maxPlainLen,
                            &m_aesKey,
                            m_ctrState.ivec,
@@ -435,7 +435,7 @@ char * CryptFileDevice::decrypt(char *cipherText, qint64 len)
         len -= maxPlainLen;
     } while (len > 0);
 
-    return (char *)plainText;
+    return std::unique_ptr<char[]>( reinterpret_cast<char *>( plainText.release() ) );
 }
 
 bool CryptFileDevice::atEnd() const
