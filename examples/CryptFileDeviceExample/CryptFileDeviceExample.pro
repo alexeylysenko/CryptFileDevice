@@ -5,7 +5,7 @@
 #-------------------------------------------------
 
 QT       += core
-CONFIG += c++14 console
+CONFIG += c++11 console
 
 TARGET = CryptFileDeviceExample
 TEMPLATE = app
