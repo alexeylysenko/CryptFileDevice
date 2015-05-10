@@ -131,6 +131,8 @@ bool CryptFileDevice::open(OpenMode mode)
         if (!tryParseHeader())
         {
             m_encrypted = false;
+            m_device->seek(0);
+            m_device->close();
             return false;
         }
     }
