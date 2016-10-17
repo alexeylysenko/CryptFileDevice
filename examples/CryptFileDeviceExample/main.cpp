@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QDebug>
 #include <QDateTime>
+#include <QDataStream>
 
 #define PRINT_STATE(ok) { qDebug() << (ok ? "..Done" : "..Failed"); }
 
