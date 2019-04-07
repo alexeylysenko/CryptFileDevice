@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui webkitwidgets
+QT       += core gui webenginewidgets
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -16,14 +16,14 @@ SRCPATH = $$PWD/../../src
 
 INCLUDEPATH += $$SRCPATH
 
-SOURCES += main.cpp\
-        mainwindow.cpp \
-        $$SRCPATH/cryptfiledevice.cpp \
-        networkaccessmanager.cpp
+SOURCES += main.cpp \
+    mainwindow.cpp \
+    $$SRCPATH/cryptfiledevice.cpp \
+    schemehandler.cpp
 
 HEADERS  += mainwindow.h \
-        $$SRCPATH/cryptfiledevice.h \
-        networkaccessmanager.h
+    $$SRCPATH/cryptfiledevice.h \
+    schemehandler.h
 
 FORMS    += mainwindow.ui
 

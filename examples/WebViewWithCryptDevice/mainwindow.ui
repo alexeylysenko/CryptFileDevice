@@ -16,8 +16,8 @@
   <widget class="QWidget" name="centralWidget">
    <layout class="QGridLayout" name="gridLayout">
     <item row="1" column="0">
-     <widget class="QWebView" name="webView">
-      <property name="url">
+     <widget class="QWebEngineView" name="webView" native="true">
+      <property name="url" stdset="0">
        <url>
         <string>about:blank</string>
        </url>
@@ -71,9 +71,10 @@
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
   <customwidget>
-   <class>QWebView</class>
+   <class>QWebEngineView</class>
    <extends>QWidget</extends>
-   <header>QtWebKitWidgets/QWebView</header>
+   <header>QtWebEngineWidgets/qwebengineview.h</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources/>
