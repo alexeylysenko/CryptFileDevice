@@ -19,27 +19,27 @@ class CryptFileDevice : public QIODevice
     Q_OBJECT
     Q_DISABLE_COPY(CryptFileDevice)
 public:
-    enum AesKeyLength
+    enum class AesKeyLength : quint32
     {
         kAesKeyLength128,
         kAesKeyLength192,
         kAesKeyLength256
     };
 
-    explicit CryptFileDevice(QObject *parent = 0);
-    explicit CryptFileDevice(QFileDevice *device, QObject *parent = 0);
+    explicit CryptFileDevice(QObject *parent = nullptr);
+    explicit CryptFileDevice(QFileDevice *device, QObject *parent = nullptr);
     explicit CryptFileDevice(QFileDevice *device,
                              const QByteArray &password,
                              const QByteArray &salt,
-                             QObject *parent = 0);
+                             QObject *parent = nullptr);
     explicit CryptFileDevice(const QString &fileName,
                              const QByteArray &password,
                              const QByteArray &salt,
-                             QObject *parent = 0);
-    ~CryptFileDevice();
+                             QObject *parent = nullptr);
+    ~CryptFileDevice() override;
 
-    bool open(OpenMode flags);
-    void close();
+    bool open(OpenMode flags) override;
+    void close() override;
 
     void setFileName(const QString &fileName);
     QString fileName() const;
@@ -52,20 +52,20 @@ public:
     void setNumRounds(int numRounds);
 
     bool isEncrypted() const;
-    qint64 size() const;
+    qint64 size() const override;
 
-    bool atEnd() const;
-    qint64 bytesAvailable() const;
-    qint64 pos() const;
-    bool seek(qint64 pos);
+    bool atEnd() const override;
+    qint64 bytesAvailable() const override;
+    qint64 pos() const override;
+    bool seek(qint64 pos) override;
     bool flush();
     bool remove();
 	bool exists() const;
 	bool rename(const QString &newName);
 
 protected:
-    qint64 readData(char *data, qint64 len);
-    qint64 writeData(const char *data, qint64 len);
+    qint64 readData(char *data, qint64 len) override;
+    qint64 writeData(const char *data, qint64 len) override;
 
     qint64 readBlock(qint64 len, QByteArray &ba);
 
@@ -84,11 +84,11 @@ private:
 
     QByteArray m_password;
     QByteArray m_salt;
-    AesKeyLength m_aesKeyLength = kAesKeyLength256;
+    AesKeyLength m_aesKeyLength = AesKeyLength::kAesKeyLength256;
     int m_numRounds = 5;
 
-    CtrState m_ctrState;
-    AES_KEY m_aesKey;
+    CtrState m_ctrState = {};
+    AES_KEY m_aesKey = {};
 };
 
 #endif // CRYPTFILEDEVICE_H

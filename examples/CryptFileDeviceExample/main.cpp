@@ -5,8 +5,9 @@
 #include <QFile>
 #include <QDebug>
 #include <QDateTime>
+#include <QDataStream>
 
-#define PRINT_STATE(ok) { qDebug() << (ok ? "..Done" : "..Failed"); }
+#define PRINT_STATE(ok) { qDebug() << ((ok) ? "..Done" : "..Failed"); }
 
 QByteArray generateRandomData(int size)
 {
@@ -759,7 +760,7 @@ int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
 
-    int seed = QDateTime::currentDateTime().toTime_t();
+    uint seed = QDateTime::currentDateTimeUtc().toTime_t();
     qDebug() << "Seed:" << seed;
     qsrand(seed);
 

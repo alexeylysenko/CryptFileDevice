@@ -6,12 +6,17 @@
 
 #include <QtEndian>
 
+#include <QVector>
+#include <QDataStream>
 #include <QFileDevice>
 #include <QFile>
 
 #include <QCryptographicHash>
 
+// TODO: remove fixed header length in version 2
 static int const kHeaderLength = 128;
+static int const kPaddingLength = 54;
+static int const kHashLength = 32;
 static int const kSaltMaxLength = 8;
 
 CryptFileDevice::CryptFileDevice(QObject *parent) :
@@ -21,8 +26,7 @@ CryptFileDevice::CryptFileDevice(QObject *parent) :
 
 CryptFileDevice::CryptFileDevice(QFileDevice *device, QObject *parent) :
     QIODevice(parent),
-    m_device(device),
-    m_deviceOwner(false)
+    m_device(device)
 {
 }
 
@@ -32,7 +36,6 @@ CryptFileDevice::CryptFileDevice(QFileDevice *device,
                                  QObject *parent) :
     QIODevice(parent),
     m_device(device),
-    m_deviceOwner(false),
     m_password(password),
     m_salt(salt.mid(0, kSaltMaxLength))
 {
@@ -145,52 +148,62 @@ bool CryptFileDevice::open(OpenMode mode)
 
 void CryptFileDevice::insertHeader()
 {
-    QByteArray header;
-    header.append(0xcd); // cryptdevice byte
-    header.append(0x01); // version
-    header.append((char *)&m_aesKeyLength, 4); // aes key length
-    header.append((char *)&m_numRounds, 4); // iteration count to use
-    QByteArray passwordHash = QCryptographicHash::hash(m_password, QCryptographicHash::Sha3_256);
-    header.append(passwordHash);
-    QByteArray saltHash = QCryptographicHash::hash(m_salt, QCryptographicHash::Sha3_256);
-    header.append(saltHash);
-    QByteArray padding(kHeaderLength - header.length(), 0xcd);
-    header.append(padding);
-    m_device->write(header);
+    QDataStream ostream(m_device);
+    ostream << quint8(0xcd); // cryptdevice byte
+    ostream << quint8(0x01); // version
+    ostream << static_cast<quint32>(m_aesKeyLength); // aes key length
+    ostream << static_cast<qint32>(m_numRounds); // iteration count to use
+    ostream.writeRawData(QCryptographicHash::hash(m_password, QCryptographicHash::Sha3_256), kHashLength);
+    ostream.writeRawData(QCryptographicHash::hash(m_salt, QCryptographicHash::Sha3_256), kHashLength);
+    ostream.writeRawData(QByteArray(kPaddingLength, char(0xcd)), kPaddingLength);
 }
 
 bool CryptFileDevice::tryParseHeader()
 {
-    QByteArray header = m_device->read(kHeaderLength);
-    if (header.length() != kHeaderLength)
+    QDataStream istream(m_device);
+    quint8 cdByte;
+    istream >> cdByte;
+    if (cdByte != 0xcd)
         return false;
 
-    if (header.at(0) != (char)0xcd)
+    quint8 version;
+    istream >> version;
+    if (version != 0x01)
         return false;
 
-    //int version = header.at(1);
-
-    int aesKeyLength = *(int *)header.mid(2, 4).data();
-    if (aesKeyLength != m_aesKeyLength)
+    quint32 aesKeyLength;
+    istream >> aesKeyLength;
+    if (static_cast<AesKeyLength>(aesKeyLength) != m_aesKeyLength)
         return false;
 
-    int numRounds = *(int *)header.mid(6, 4).data();
+    qint32 numRounds;
+    istream >> numRounds;
     if (numRounds != m_numRounds)
         return false;
 
-    QByteArray passwordHash = header.mid(10, 32);
+    QByteArray hash(kHashLength, '\0');
+    int read = istream.readRawData(hash.data(), kHashLength);
+    if (read != kHashLength)
+        return false;
+
     QByteArray expectedPasswordHash = QCryptographicHash::hash(m_password, QCryptographicHash::Sha3_256);
-    if (passwordHash != expectedPasswordHash)
+    if (hash != expectedPasswordHash)
         return false;
 
-    QByteArray saltHash = header.mid(42, 32);
+    read = istream.readRawData(hash.data(), kHashLength);
+    if (read != kHashLength)
+        return false;
+
     QByteArray expectedSaltHash = QCryptographicHash::hash(m_salt, QCryptographicHash::Sha3_256);
-    if (saltHash != expectedSaltHash)
+    if (hash != expectedSaltHash)
         return false;
 
-    QByteArray padding = header.mid(74);
-    QByteArray expectedPadding(padding.length(), 0xcd);
+    QByteArray padding(kPaddingLength, '\0');
+    read = istream.readRawData(padding.data(), kPaddingLength);
+    if (read != kPaddingLength)
+        return false;
 
+    QByteArray expectedPadding(kPaddingLength, char(0xcd));
     return padding == expectedPadding;
 }
 
@@ -267,7 +280,7 @@ qint64 CryptFileDevice::readBlock(qint64 len, QByteArray &ba)
     if (readBytes == 0)
         return 0;
 
-    QScopedPointer<char> plaintext(decrypt(ba.data() + length, readBytes));
+    QScopedArrayPointer<char> plaintext(decrypt(ba.data() + length, readBytes));
 
     ba.append(plaintext.data(), readBytes);
 
@@ -309,7 +322,7 @@ qint64 CryptFileDevice::writeData(const char *data, qint64 len)
     if (!m_encrypted)
         return m_device->write(data, len);
 
-    QScopedPointer<char> cipherText(encrypt(data, len));
+    QScopedArrayPointer<char> cipherText(encrypt(data, len));
     m_device->write(cipherText.data(), len);
 
     return len;
@@ -353,11 +366,11 @@ void CryptFileDevice::initCtr(CtrState *state, const unsigned char *iv)
 bool CryptFileDevice::initCipher()
 {
     const EVP_CIPHER *cipher = EVP_enc_null();
-    if (m_aesKeyLength == kAesKeyLength128)
+    if (m_aesKeyLength == AesKeyLength::kAesKeyLength128)
         cipher = EVP_aes_128_ctr();
-    else if (m_aesKeyLength == kAesKeyLength192)
+    else if (m_aesKeyLength == AesKeyLength::kAesKeyLength192)
         cipher = EVP_aes_192_ctr();
-    else if (m_aesKeyLength == kAesKeyLength256)
+    else if (m_aesKeyLength == AesKeyLength::kAesKeyLength256)
         cipher = EVP_aes_256_ctr();
     else
         Q_ASSERT_X(false, Q_FUNC_INFO, "Unknown value of AesKeyLength");
@@ -369,8 +382,8 @@ bool CryptFileDevice::initCipher()
     int keyLength = EVP_CIPHER_CTX_key_length(&ctx);
     int ivLength = EVP_CIPHER_CTX_iv_length(&ctx);
 
-    unsigned char key[keyLength];
-    unsigned char iv[ivLength];
+    QVector<unsigned char> key(keyLength);
+    QVector<unsigned char> iv(ivLength);
 
     int ok = EVP_BytesToKey(cipher,
                             EVP_sha256(),
@@ -378,26 +391,26 @@ bool CryptFileDevice::initCipher()
                             reinterpret_cast<unsigned char *>(m_password.data()),
                             m_password.length(),
                             m_numRounds,
-                            key,
-                            iv);
+                            key.data(),
+                            iv.data());
 
     EVP_CIPHER_CTX_cleanup(&ctx);
 
     if (ok == 0)
         return false;
 
-    int res = AES_set_encrypt_key(key, keyLength * 8, &m_aesKey);
+    int res = AES_set_encrypt_key(key.data(), keyLength * 8, &m_aesKey);
     if (res != 0)
         return false;
 
-    initCtr(&m_ctrState, iv);
+    initCtr(&m_ctrState, iv.data());
 
     return true;
 }
 
 char * CryptFileDevice::encrypt(const char *plainText, qint64 len)
 {
-    unsigned char *cipherText = new unsigned char[len];
+    auto cipherText = new unsigned char[len];
 
     qint64 processLen = 0;
     do {
@@ -420,7 +433,7 @@ char * CryptFileDevice::encrypt(const char *plainText, qint64 len)
 
 char *CryptFileDevice::decrypt(const char *cipherText, qint64 len)
 {
-    unsigned char *plainText = new unsigned char[len];
+    auto plainText = new unsigned char[len];
 
     qint64 processLen = 0;
     do {

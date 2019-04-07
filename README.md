@@ -5,10 +5,10 @@ Qt cross-platform class which allows transparently encrypt/decrypt QFileDevice u
 
 ## Dependencies
 
-| Name         | Version                          |
-|--------------|----------------------------------|
-| Qt           | >= 5.1.0                         |
-| C++ compiler | supporting C++11 (i.e. gcc 4.6+) |
+| Name         | Version                          | Comment                          |
+|--------------|----------------------------------|----------------------------------|
+| Qt           | >= 5.1.0                         | adapted for Qt 5.12              |
+| C++ compiler | supporting C++11 (i.e. gcc 4.6+) |                                  |
 
 ## Usage
 
@@ -18,7 +18,7 @@ In examples folder there are 2 example projects.
 
 1) CryptFileDeviceExample - test general operations with file and compare results with QFile object.
 
-2) WebViewWithCryptFileDevice - show how to display the user encrypt content (image).
+2) WebViewWithCryptFileDevice - show how to display the user encrypt content (image) - hasn't yet ported for WebEngine (comes later). 
 
 ## Contact
 
