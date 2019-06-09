@@ -1,5 +1,6 @@
 #include "cryptfiledevice.h"
 
+#include <openssl/modes.h>
 #include <openssl/evp.h>
 
 #include <limits>
@@ -375,12 +376,11 @@ bool CryptFileDevice::initCipher()
     else
         Q_ASSERT_X(false, Q_FUNC_INFO, "Unknown value of AesKeyLength");
 
-    EVP_CIPHER_CTX ctx;
-
-    EVP_CIPHER_CTX_init(&ctx);
-    EVP_EncryptInit_ex(&ctx, cipher, nullptr, nullptr, nullptr);
-    int keyLength = EVP_CIPHER_CTX_key_length(&ctx);
-    int ivLength = EVP_CIPHER_CTX_iv_length(&ctx);
+    auto ctx = EVP_CIPHER_CTX_new();
+    EVP_CIPHER_CTX_init(ctx);
+    EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr);
+    int keyLength = EVP_CIPHER_CTX_key_length(ctx);
+    int ivLength = EVP_CIPHER_CTX_iv_length(ctx);
 
     QVector<unsigned char> key(keyLength);
     QVector<unsigned char> iv(ivLength);
@@ -394,7 +394,7 @@ bool CryptFileDevice::initCipher()
                             key.data(),
                             iv.data());
 
-    EVP_CIPHER_CTX_cleanup(&ctx);
+    EVP_CIPHER_CTX_free(ctx);
 
     if (ok == 0)
         return false;
@@ -415,14 +415,14 @@ char * CryptFileDevice::encrypt(const char *plainText, qint64 len)
     qint64 processLen = 0;
     do {
         int maxCipherLen = len > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : len;
-
-        AES_ctr128_encrypt(reinterpret_cast<const unsigned char *>(plainText) + processLen,
-                           cipherText + processLen,
-                           maxCipherLen,
-                           &m_aesKey,
-                           m_ctrState.ivec,
-                           m_ctrState.ecount,
-                           &m_ctrState.num);
+        CRYPTO_ctr128_encrypt(reinterpret_cast<const unsigned char *>(plainText) + processLen,
+                             cipherText + processLen,
+                             maxCipherLen,
+                             &m_aesKey,
+                             m_ctrState.ivec,
+                             m_ctrState.ecount,
+                             &m_ctrState.num,
+                             (block128_f)AES_encrypt);
 
         processLen += maxCipherLen;
         len -= maxCipherLen;
@@ -438,14 +438,14 @@ char *CryptFileDevice::decrypt(const char *cipherText, qint64 len)
     qint64 processLen = 0;
     do {
         int maxPlainLen = len > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : len;
-
-        AES_ctr128_encrypt(reinterpret_cast<const unsigned char *>(cipherText) + processLen,
-                           plainText + processLen,
-                           maxPlainLen,
-                           &m_aesKey,
-                           m_ctrState.ivec,
-                           m_ctrState.ecount,
-                           &m_ctrState.num);
+        CRYPTO_ctr128_encrypt(reinterpret_cast<const unsigned char *>(cipherText) + processLen,
+                              plainText + processLen,
+                              maxPlainLen,
+                              &m_aesKey,
+                              m_ctrState.ivec,
+                              m_ctrState.ecount,
+                              &m_ctrState.num,
+                              (block128_f)AES_encrypt);
 
         processLen += maxPlainLen;
         len -= maxPlainLen;
