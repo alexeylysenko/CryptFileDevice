@@ -19,7 +19,9 @@ In examples folder there are 2 example projects.
 
 1) CryptFileDeviceExample - test general operations with file and compare results with QFile object.
 
-2) WebViewWithCryptFileDevice - show how to display the user's encrypted content (image). 
+2) WebViewWithCryptFileDevice - show how to display the user's encrypted content (image).
+
+You can find the docker image is ready to build & run CryptFileDeviceExample without any additional preparations [here](https://github.com/alexeylysenko/docker_ubuntu_qt)
 
 ## Contact
 
