@@ -21,7 +21,7 @@ In examples folder there are 2 example projects.
 
 2) WebViewWithCryptFileDevice - show how to display the user's encrypted content (image).
 
-You can find the docker image is ready to build & run CryptFileDeviceExample without any additional preparations [here](https://github.com/alexeylysenko/docker_ubuntu_qt)
+You can find the docker image ready to build & run CryptFileDeviceExample without any additional preparations [here](https://github.com/alexeylysenko/docker_ubuntu_qt)
 
 ## Contact
 
