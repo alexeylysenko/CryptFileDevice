@@ -5,15 +5,36 @@
 #include <QDataStream>
 #include <QDateTime>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QFile>
+#include <QRandomGenerator>
 
-#define PRINT_STATE(ok) \
+#define PRINT_STATE(ok)                                                        \
   { qDebug() << ((ok) ? "..Done" : "..Failed"); }
+
+void initRandomGenerator() {
+#if QT_VERSION >= 0x051000
+  // unnecessary, global QRandomGenerator is already seeded using
+  // securelySeeded()
+#else
+  uint seed = QDateTime::currentSecsSinceEpoch();
+  qDebug() << "Seed:" << seed;
+  qsrand(seed);
+#endif
+}
+
+quint32 generateRandomInt() {
+#if QT_VERSION >= 0x051000
+  return QRandomGenerator::global()->generate();
+#else
+  return qrand();
+#endif
+}
 
 QByteArray generateRandomData(int size) {
   QByteArray data;
   while (data.size() < size) {
-    data += char(qrand() % 256);
+    data += char(generateRandomInt() % 256);
   }
   return data;
 }
@@ -47,12 +68,13 @@ bool compare(const QString &pathToEnc, const QString &pathToPlain) {
 }
 
 QByteArray calculateXor(const QByteArray &data, const QByteArray &key) {
-  if (key.isEmpty()) return data;
+  if (key.isEmpty())
+    return data;
 
   QByteArray result;
   for (int i = 0, j = 0; i < data.length(); ++i, ++j) {
     if (j == key.length())
-      j = 0;  // repeat the key if key.length() < data.length()
+      j = 0; // repeat the key if key.length() < data.length()
     result.append(data.at(i) ^ key.at(j));
   }
   return result;
@@ -60,8 +82,10 @@ QByteArray calculateXor(const QByteArray &data, const QByteArray &key) {
 
 bool openDevicePair(QIODevice *device1, QIODevice *device2,
                     QIODevice::OpenMode mode) {
-  if (device1->isOpen()) device1->close();
-  if (device2->isOpen()) device2->close();
+  if (device1->isOpen())
+    device1->close();
+  if (device2->isOpen())
+    device2->close();
 
   if (!device1->open(mode)) {
     Q_ASSERT_X(false, Q_FUNC_INFO, "Cannot create test file");
@@ -95,7 +119,8 @@ void testCryptFileDevice() {
 
   qDebug() << "Writing random content";
   for (int i = 0; i < 200; i++) {
-    QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+    QByteArray data =
+        generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
     plainFile.write(data);
     cryptFileDevice.write(data);
   }
@@ -130,8 +155,8 @@ void testCryptFileDevice() {
       return;
     ok = true;
     for (int i = 0; i < 200; i++) {
-      qint64 pos = qrand() % plainFile.size();  // size is the same
-      qint64 maxlen = qrand() % 256;
+      qint64 pos = generateRandomInt() % plainFile.size(); // size is the same
+      qint64 maxlen = generateRandomInt() % 256;
 
       cryptFileDevice.seek(pos);
       Q_ASSERT(cryptFileDevice.pos() == pos);
@@ -165,13 +190,15 @@ void testCryptFileDevice() {
 
     while (!plainFile.atEnd()) {
       QByteArray line = plainFile.readLine();
-      if (line.isEmpty()) break;
+      if (line.isEmpty())
+        break;
       chk1 = calculateXor(chk1, line);
     }
 
     while (!cryptFileDevice.atEnd()) {
       QByteArray line = cryptFileDevice.readLine();
-      if (line.isEmpty()) break;
+      if (line.isEmpty())
+        break;
       chk2 = calculateXor(chk2, line);
     }
 
@@ -187,7 +214,8 @@ void testCryptFileDevice() {
       return;
 
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
       qint64 plainBytesWritten = plainFile.write(data);
       Q_ASSERT(plainBytesWritten == data.size());
       qint64 cryptBytesWritten = cryptFileDevice.write(data);
@@ -209,7 +237,8 @@ void testCryptFileDevice() {
                         QIODevice::WriteOnly | QIODevice::Truncate))
       return;
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
       plainFile.write(data);
       cryptFileDevice.write(data);
     }
@@ -229,7 +258,8 @@ void testCryptFileDevice() {
       return;
 
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
       plainFile.write(data);
       plainFile.flush();
       cryptFileDevice.write(data);
@@ -252,7 +282,8 @@ void testCryptFileDevice() {
       return;
 
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
       plainFile.write(data);
       qint64 plainSize = plainFile.size();
       cryptFileDevice.write(data);
@@ -275,7 +306,8 @@ void testCryptFileDevice() {
                         QIODevice::WriteOnly | QIODevice::Truncate))
       return;
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
       plainFile.write(data);
       cryptFileDevice.write(data);
     }
@@ -286,14 +318,15 @@ void testCryptFileDevice() {
         return;
 
       for (int i = 0; i < 200; i++) {
-        qint64 pos = qrand() % plainFile.size();  // size is the same
+        qint64 pos = generateRandomInt() % plainFile.size(); // size is the same
 
         cryptFileDevice.seek(pos);
         Q_ASSERT(cryptFileDevice.pos() == pos);
         plainFile.seek(pos);
         Q_ASSERT(plainFile.pos() == pos);
 
-        QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+        QByteArray data =
+            generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
         plainFile.write(data);
         cryptFileDevice.write(data);
       }
@@ -317,7 +350,8 @@ void testCryptFileDevice() {
     QDataStream plainStream(&plainFile);
     QDataStream cryptStream(&cryptFileDevice);
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
 
       plainStream << data;
       cryptStream << data;
@@ -340,7 +374,8 @@ void testCryptFileDevice() {
     QDataStream plainStream(&plainFile);
     QDataStream cryptStream(&cryptFileDevice);
     for (int i = 0; i < 200; i++) {
-      QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+      QByteArray data =
+          generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
 
       int plainBytesWritten =
           plainStream.writeRawData(data.constData(), data.length());
@@ -387,7 +422,7 @@ void testCryptFileDevice() {
     QDataStream cryptStream(&cryptFileDevice);
 
     for (int i = 0; i < 200; ++i) {
-      int size = qrand() % 256;
+      int size = generateRandomInt() % 256;
       QByteArray dataFromPlainFile(size, ' ');
       QByteArray dataFromCryptDevice(size, ' ');
 
@@ -420,8 +455,8 @@ void testCryptFileDevice() {
     QTextStream cryptStream(&cryptFileDevice);
 
     for (int i = 0; i < 200; ++i) {
-      int pos = qrand() % plainFile.size();
-      int size = qrand() % 256;
+      int pos = generateRandomInt() % plainFile.size();
+      int size = generateRandomInt() % 256;
 
       plainStream.seek(pos);
       Q_ASSERT(plainStream.pos() == pos);
@@ -458,13 +493,15 @@ void testCryptFileDevice() {
 
     while (!plainStream.atEnd()) {
       QString line = plainStream.readLine();
-      if (line.isEmpty()) break;
+      if (line.isEmpty())
+        break;
       chk1 = calculateXor(chk1, line.toUtf8());
     }
 
     while (!cryptStream.atEnd()) {
       QString line = cryptStream.readLine();
-      if (line.isEmpty()) break;
+      if (line.isEmpty())
+        break;
       chk2 = calculateXor(chk2, line.toUtf8());
     }
 
@@ -521,7 +558,7 @@ QMap<QString, int> testQFilePerformance(const QString &pathToTestData) {
   QFile testFile(fileName);
   bool ok = true;
 
-  QTime timer;
+  QElapsedTimer timer;
   int time;
   QByteArray chunk;
   chunk.reserve(100000);
@@ -533,11 +570,12 @@ QMap<QString, int> testQFilePerformance(const QString &pathToTestData) {
   ok = testFile.open(QIODevice::WriteOnly);
   PRINT_STATE(ok)
   Q_ASSERT_X(ok, Q_FUNC_INFO, "Opening file is failed");
-  if (!ok) return result;
+  if (!ok)
+    return result;
 
   testDataFile.seek(0);
   while (!testDataFile.atEnd()) {
-    chunk = testDataFile.read(99991);  // max prime number < 100000
+    chunk = testDataFile.read(99991); // max prime number < 100000
     testFile.write(chunk);
   }
 
@@ -552,12 +590,13 @@ QMap<QString, int> testQFilePerformance(const QString &pathToTestData) {
   ok = testFile.open(QIODevice::ReadOnly);
   PRINT_STATE(ok)
   Q_ASSERT_X(ok, Q_FUNC_INFO, "Opening file is failed");
-  if (!ok) return result;
+  if (!ok)
+    return result;
 
   timer.start();
   testFile.seek(0);
   while (!testFile.atEnd()) {
-    chunk = testFile.read(99991);  // max prime number < 100000
+    chunk = testFile.read(99991); // max prime number < 100000
   }
 
   testFile.close();
@@ -572,11 +611,12 @@ QMap<QString, int> testQFilePerformance(const QString &pathToTestData) {
   ok = testFile.open(QIODevice::WriteOnly);
   PRINT_STATE(ok)
   Q_ASSERT_X(ok, Q_FUNC_INFO, "Opening file is failed");
-  if (!ok) return result;
+  if (!ok)
+    return result;
 
   testDataFile.seek(0);
   while (!testDataFile.atEnd()) {
-    chunk = testDataFile.read(99991);  // max prime number < 100000
+    chunk = testDataFile.read(99991); // max prime number < 100000
     testFile.write(chunk);
     testFile.size();
   }
@@ -611,7 +651,7 @@ QMap<QString, int> testCryptFilePerformance(const QString &pathToTestData) {
                            "gfdgfdsgfdgfdgfdgfds");
   bool ok = true;
 
-  QTime timer;
+  QElapsedTimer timer;
   int time;
   QByteArray chunk;
   chunk.reserve(100000);
@@ -623,11 +663,12 @@ QMap<QString, int> testCryptFilePerformance(const QString &pathToTestData) {
   ok = testFile.open(QIODevice::WriteOnly);
   PRINT_STATE(ok)
   Q_ASSERT_X(ok, Q_FUNC_INFO, "Opening file is failed");
-  if (!ok) return result;
+  if (!ok)
+    return result;
 
   testDataFile.seek(0);
   while (!testDataFile.atEnd()) {
-    chunk = testDataFile.read(99991);  // max prime number < 100000
+    chunk = testDataFile.read(99991); // max prime number < 100000
     testFile.write(chunk);
   }
 
@@ -642,12 +683,13 @@ QMap<QString, int> testCryptFilePerformance(const QString &pathToTestData) {
   ok = testFile.open(QIODevice::ReadOnly);
   PRINT_STATE(ok)
   Q_ASSERT_X(ok, Q_FUNC_INFO, "Opening file is failed");
-  if (!ok) return result;
+  if (!ok)
+    return result;
 
   timer.start();
   testFile.seek(0);
   while (!testFile.atEnd()) {
-    chunk = testFile.read(99991);  // max prime number < 100000
+    chunk = testFile.read(99991); // max prime number < 100000
   }
 
   testFile.close();
@@ -662,11 +704,12 @@ QMap<QString, int> testCryptFilePerformance(const QString &pathToTestData) {
   ok = testFile.open(QIODevice::WriteOnly);
   PRINT_STATE(ok)
   Q_ASSERT_X(ok, Q_FUNC_INFO, "Opening file is failed");
-  if (!ok) return result;
+  if (!ok)
+    return result;
 
   testDataFile.seek(0);
   while (!testDataFile.atEnd()) {
-    chunk = testDataFile.read(99991);  // max prime number < 100000
+    chunk = testDataFile.read(99991); // max prime number < 100000
     testFile.write(chunk);
     testFile.size();
   }
@@ -687,9 +730,9 @@ void testPerformance() {
     return;
   }
 
-  for (int i = 0; i < 1000; i++)  // How much MB
+  for (int i = 0; i < 1000; i++) // How much MB
   {
-    QByteArray data = generateRandomData(1024 * 1024);  // 1MB
+    QByteArray data = generateRandomData(1024 * 1024); // 1MB
 
     testFile.write(data);
   }
@@ -718,7 +761,8 @@ void testShortSalt() {
     return;
   }
   for (int i = 0; i < 200; i++) {
-    QByteArray data = generateRandomData(qrand() % 256).toBase64() + "\r\n";
+    QByteArray data =
+        generateRandomData(generateRandomInt() % 256).toBase64() + "\r\n";
     plainFile.write(data);
     cryptFileDevice.write(data);
   }
@@ -743,11 +787,9 @@ void testShortSalt() {
 int main(int argc, char *argv[]) {
   QCoreApplication a(argc, argv);
 
-  uint seed = QDateTime::currentDateTimeUtc().toTime_t();
-  qDebug() << "Seed:" << seed;
-  qsrand(seed);
+  initRandomGenerator();
 
-  QTime timer;
+  QElapsedTimer timer;
   for (int i = 0; i < 200; i++) {
     qDebug() << i << " times";
     timer.restart();

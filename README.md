@@ -7,7 +7,7 @@ Qt cross-platform class which allows transparently encrypt/decrypt QFileDevice u
 
 | Name         | Version                          | Comment                                          |
 |--------------|----------------------------------|--------------------------------------------------|
-| Qt           | >= 5.1.0                         | adapted for Qt 5.12                              |
+| Qt           | >= 5.1.0 (supports Qt6 as well)  | adapted for Qt 6.2                              |
 | C++ compiler | supporting C++11 (i.e. gcc 4.6+) |                                                  |
 | OpenSSL      | >= 1.0.0                         | didn't test with older versions, but it may work |
 
